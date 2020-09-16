@@ -1,0 +1,120 @@
+From 6a2235a93b8aab9fa6d9c6baded51bb0ab5c94f1 Mon Sep 17 00:00:00 2001
+From: Jeroen Jacobs <git@jeroenj.be>
+Date: Mon, 24 Apr 2017 09:28:54 +0200
+Subject: [PATCH] Adds a --config option to pass a path to a .pronto.yml config
+ file
+
+---
+ lib/pronto/cli.rb               |  6 ++++++
+ lib/pronto/config_file.rb       |  9 +++++++--
+ spec/pronto/config_file_spec.rb | 34 +++++++++++++++++++++++++++++++++
+ 3 files changed, 47 insertions(+), 2 deletions(-)
+
+diff --git a/lib/pronto/cli.rb b/lib/pronto/cli.rb
+index de1fae7..2d54253 100644
+--- a/lib/pronto/cli.rb
++++ b/lib/pronto/cli.rb
+@@ -14,6 +14,11 @@ module Pronto
+ 
+     desc 'run [PATH]', 'Run Pronto'
+ 
++    method_option :config,
++                  type: :string,
++                  default: '.pronto.yml',
++                  desc: 'Uses the specified cofnig file.'
++
+     method_option :'exit-code',
+                   type: :boolean,
+                   desc: 'Exits with non-zero code if there were any warnings/errors.'
+@@ -47,6 +52,7 @@ module Pronto
+ 
+     def run(path = '.')
+       path = File.expand_path(path)
++      ENV['PRONTO_CONFIG'] ||= options[:config]
+ 
+       gem_names = options[:runner].any? ? options[:runner] : ::Pronto::GemNames.new.to_a
+       gem_names.each do |gem_name|
+diff --git a/lib/pronto/config_file.rb b/lib/pronto/config_file.rb
+index 5f0c5ff..66c053b 100644
+--- a/lib/pronto/config_file.rb
++++ b/lib/pronto/config_file.rb
+@@ -1,6 +1,7 @@
+ module Pronto
+   class ConfigFile
+     DEFAULT_MESSAGE_FORMAT = '%{msg}'.freeze
++    DEFAULT_FILE_PATH = '.pronto.yml'.freeze
+     DEFAULT_WARNINGS_PER_REVIEW = 30
+ 
+     EMPTY = {
+@@ -39,8 +40,12 @@ module Pronto
+       'format' => DEFAULT_MESSAGE_FORMAT
+     }.freeze
+ 
+-    def initialize(path = '.pronto.yml')
+-      @path = path
++    def initialize
++      @path = if File.exist?(ENV['PRONTO_CONFIG'].to_s)
++                ENV['PRONTO_CONFIG']
++              else
++                DEFAULT_FILE_PATH
++              end
+     end
+ 
+     def to_h
+diff --git a/spec/pronto/config_file_spec.rb b/spec/pronto/config_file_spec.rb
+index 906ae0a..1504df1 100644
+--- a/spec/pronto/config_file_spec.rb
++++ b/spec/pronto/config_file_spec.rb
+@@ -33,6 +33,9 @@ module Pronto
+ 
+       context 'only global excludes in file' do
+         before do
++          File.should_receive(:exist?)
++            .and_return(false)
++
+           File.should_receive(:exist?)
+             .and_return(true)
+ 
+@@ -49,8 +52,39 @@ module Pronto
+         end
+       end
+ 
++      context 'custom config file' do
++        let(:path) { '/tmp/pronto.yml' }
++
++        before do
++          ENV.should_receive(:[])
++            .with('PRONTO_CONFIG').twice
++            .and_return(path)
++
++          File.should_receive(:exist?)
++            .with(path)
++            .and_return(true)
++
++          File.should_receive(:exist?)
++            .and_return(true)
++
++          YAML.should_receive(:load_file)
++            .with(path)
++            .and_return('all' => { 'exclude' => ['a/**/*.rb'] })
++        end
++
++        it do
++          should include(
++            'all' => {
++              'exclude' => ['a/**/*.rb'], 'include' => []
++            }
++          )
++        end
++      end
++
+       context 'a value is set to false' do
+         before do
++          File.should_receive(:exist?)
++            .and_return(false)
+           File.should_receive(:exist?)
+             .and_return(true)
+ 
+-- 
+2.26.2
+
